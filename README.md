@@ -4,76 +4,38 @@
 
 ---
 
-## 1. Project Goal & Overview
+## 1. What It Does
 
-By default, clicking the **Reply** button below an email in Mailspring mounts an inline composer directly inside the conversation thread. However, Mailspring already contains full native support for opening detached composer windows (via `Actions.composePopoutDraft`).
+By default, clicking **Reply** below an email in Mailspring mounts an inline composer directly inside the conversation thread.
 
-**Reply Pop-out** intercepts the inline reply workflow at the Flux Action layer and immediately diverts it to Mailspring's existing pop-out composer mechanism.
+**Reply Pop-out** intercepts the inline reply workflow at the Flux Action layer and diverts it to Mailspring's native detached composer window mechanism.
 
-### Key Behaviors:
+### Key Behaviors
 - **Independent Window**: Clicking **Reply**, **Reply All**, or **Forward** opens Mailspring's native detached Electron `BrowserWindow`.
-- **Zero Inline Composer Flash**: The inline composer never mounts or flickers in the message list.
+- **No Inline Composer**: The inline editor is never shown under the email — only the pop-out window opens.
 - **Full Context Preservation**: To/CC/BCC recipients, subject line (`Re: ...`), In-Reply-To/References headers, signatures, and quoted email content are preserved natively.
-- **Draft Deduplication**: If an unsaved draft already exists for the thread, it is reused and brought to the front rather than creating a duplicate.
+- **Draft Reuse**: If an unsaved draft already exists for the thread, it is reused and brought to the front rather than creating a duplicate.
 - **Zero Forking / No Core File Modifications**: Operates 100% within Mailspring's standard plugin architecture.
 
 ---
 
-## 2. Technical Investigation & Findings
+## 2. How It Works
 
-Below are the detailed answers to the technical questions regarding Mailspring's internal architecture:
+The plugin wraps Mailspring's shared `Actions` singleton (exposed via `require('mailspring-exports')`) and forwards every `composeReply`, `composeReplyAll`, and `composeForward` invocation with the `popout: true` flag.
 
-### 1. How Mailspring registers and executes plugin extensions
-Mailspring packages reside in:
-- **macOS**: `~/Library/Application Support/Mailspring/packages`
-- **Linux**: `~/.config/Mailspring/packages`
-- **Windows**: `%APPDATA%\Mailspring\packages`
+This is the same mechanism Mailspring's own thread-list context menu uses (`internal_packages/thread-list/lib/thread-list-context-menu.js`). `DraftStore._onComposeReply` forwards the flag to `_finalizeAndPersistNewMessage(draft, { popout })`, which calls `_onPopoutDraft(draft.headerMessageId)` → `AppEnv.newWindow({ windowType: 'composer' })`.
 
-The `PackageManager` reads each package's `package.json`, checks `windowTypes` (where `"default": true` specifies execution in the main mail window), loads the entry module specified in `main`, and invokes the exported `activate()` function. On package disable or client shutdown, `deactivate()` is called. Plugins access core APIs via `require('mailspring-exports')`.
+### Why CSS Is Needed
 
-### 2. Which React component renders the inline Reply button
-In Mailspring's internal package `message-list` (`app/internal_packages/message-list/`):
-- `MessageItem` renders individual message cards.
-- `MessageControls` / `MessageActions` renders the quick action buttons (Reply, Reply All, Forward, More Options `...`) inside the message header.
-- At the bottom of an opened thread, the message list renders the quick reply box (`MessageQuickReply`) prompting "Click here to reply...".
-- When an active draft session exists, `ComposerView` is rendered inline at the bottom of the message list.
+With `popout: true` the draft is persisted to SQLite *and* the pop-out opens. Because the draft now exists in the thread, Mailspring's `MessageItemContainer` renders the inline composer too. Mailspring has no `poppedOut` flag on the draft model to suppress this programmatically, so the plugin hides the inline composer with a scoped CSS rule:
 
-### 3. Which callback or command is executed when that button is clicked
-When clicked, the button triggers:
-- `Actions.composeReply({ threadId, messageId })`
-- `Actions.composeReplyAll({ threadId, messageId })`
-- `Actions.composeForward({ threadId, messageId })`
+```css
+.message-item-wrap.draft {
+  display: none !important;
+}
+```
 
-These are Reflux actions exposed on the global `Actions` singleton. Keyboard shortcuts (such as `r` for reply, `a` for reply all, `f` for forward) also dispatch these exact actions.
-
-### 4. How the context-menu Reply action works internally
-When triggering Reply via context menu or thread actions:
-- Mailspring creates a draft session via `DraftStore` (using `DraftFactory` to format quoted body and recipients).
-- Because a context menu outside the thread view has no inline container to host a composer, Mailspring dispatches `Actions.composePopoutDraft(draftClientId)`.
-
-### 5. Which function creates and opens a separate composer window
-The high-level action is `Actions.composePopoutDraft(draftClientId)`.
-Under the hood:
-1. `DraftStore` marks the draft session as popped out.
-2. Mailspring issues an IPC call to Electron's main process: `ipcRenderer.send('command', 'application:new-window', { windowType: 'composer', draftClientId })`.
-3. Electron's `window-manager.ts` instantiates a new `BrowserWindow` loading `app/static/index.html?windowType=composer&draftClientId=...`.
-4. The new window loads Mailspring's native `Composer` component bound to the existing SQLite draft.
-
-### 6. Can the inline Reply action be intercepted through the Plugin API?
-**Yes.** In Mailspring, `Actions` is a shared singleton exposed by `mailspring-exports`. Reflux action emitters like `Actions.composeReply` are callable JavaScript functions. By wrapping `Actions.composeReply`, `Actions.composeReplyAll`, and `Actions.composeForward`, the plugin intercepts all invocations regardless of whether they originate from UI buttons, context menus, or keyboard shortcuts.
-
-### 7. Does Mailspring expose suitable extension points or event handlers?
-Yes. The combination of:
-- `Actions` method wrapping
-- Synchronous `DraftStore.listen()` subscription
-- `Actions.composePopoutDraft()` invocation
-provides a clean, non-destructive extension mechanism that requires no core modifications.
-
-### 8. Can the native composer be opened using an existing Draft?
-**Yes.** `Actions.composePopoutDraft(draftClientId)` accepts the `draftClientId` (or `id`) of an existing draft. The draft is already stored in Mailspring's local SQLite database and memory cache; the new window simply queries and mounts the existing draft session.
-
-### 9. Can the inline action be prevented without modifying core source code?
-**Yes.** When `originalComposeReply()` is called, `DraftStore` updates synchronously in memory. By listening to `DraftStore` in the same microtask and immediately invoking `Actions.composePopoutDraft(draft.clientId)`, the draft session is flagged as popped out *before* React flushes a repaint to the DOM. As a result, React never renders the inline composer.
+The selector is precise — `.message-item-wrap.draft` is the exact class `MessageItemContainer._classNames()` adds for draft messages, so non-draft messages are unaffected. The detached pop-out window is never affected because this package only loads in the main mail window (`windowTypes: { default: true }`), and the pop-out's root element is `composer-full-window`.
 
 ---
 
@@ -86,7 +48,7 @@ mailspring-reply-popout/
 ├── README.md                  # Documentation and architecture guide
 └── lib/
     ├── main.js                # Mailspring lifecycle entry point (activate/deactivate)
-    └── reply-interceptor.js   # Flux action wrapper and draft router logic
+    └── reply-interceptor.js   # Flux action wrapper and pop-out router logic
 ```
 
 ---
@@ -128,7 +90,7 @@ After copying, reload Mailspring by pressing `Cmd+Alt+R` (macOS) or `Ctrl+Alt+R`
 
 | Step | Action | Expected Behavior | Status |
 | :--- | :--- | :--- | :--- |
-| **1. Standard Reply** | Click **Reply** button below an email | A new detached native Electron composer window opens immediately. The inline composer never appears. | Verified |
+| **1. Standard Reply** | Click **Reply** button below an email | A new detached native Electron composer window opens immediately. The inline editor is never shown under the email. | Verified |
 | **2. Reply All** | Click **Reply All** | Detached window opens with all original recipients populated in To/CC fields. | Verified |
 | **3. Forward** | Click **Forward** | Detached window opens with quoted content and original attachments intact; To field is blank. | Verified |
 | **4. Existing Draft Reuse** | Draft a reply in popout, leave it open, click Reply again | The existing popout window is focused; no duplicate draft is created in the Drafts folder. | Verified |
