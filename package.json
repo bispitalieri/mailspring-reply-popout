@@ -1,0 +1,29 @@
+{
+  "name": "mailspring-reply-popout",
+  "displayName": "Reply Pop-out",
+  "version": "1.0.0",
+  "description": "Automatically opens email replies, reply-alls, and forwards in detached native Electron composer windows instead of inline.",
+  "author": "Mailspring Contributor",
+  "license": "MIT",
+  "main": "./lib/main.js",
+  "windowTypes": {
+    "default": true
+  },
+  "engines": {
+    "mailspring": ">=1.7.0"
+  },
+  "keywords": [
+    "mailspring",
+    "plugin",
+    "reply",
+    "reply-all",
+    "forward",
+    "composer",
+    "popout",
+    "electron"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mailspring-community/mailspring-reply-popout"
+  }
+}
