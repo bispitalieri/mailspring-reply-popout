@@ -24,9 +24,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/mailspring-community/mailspring-reply-popout"
+    "url": "https://github.com/bispitalieri/mailspring-reply-popout"
   },
   "scripts": {
-    "zip": "zip -r mailspring-reply-popout.zip . -x '*.git*' '*.idea*' '*.DS_Store*' 'node_modules/*'"
+    "zip": "zip -r mailspring-reply-popout.zip . -x '*.git*' '*.idea*' '*.DS_Store*' 'node_modules/*'",
+    "sha": "shasum -a 256 mailspring-reply-popout.zip > mailspring-reply-popout.zip.sha256",
+    "release": "npm run zip && npm run sha"
   }
 }
