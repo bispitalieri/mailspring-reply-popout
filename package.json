@@ -3,7 +3,7 @@
   "displayName": "Reply Pop-out",
   "version": "1.0.0",
   "description": "Automatically opens email replies, reply-alls, and forwards in detached native Electron composer windows instead of inline.",
-  "author": "Mailspring Contributor",
+  "author": "bspitalieri",
   "license": "MIT",
   "main": "./lib/main.js",
   "windowTypes": {
