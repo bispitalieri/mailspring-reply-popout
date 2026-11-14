@@ -5,8 +5,8 @@ Plugin for Mailspring that opens **Reply**, **Reply All**, and **Forward** in de
 ---
 
 ## What the plugin does
-
-By default Mailspring opens the reply editor inline, directly below the email in the conversation. This plugin intercepts it and diverts it to Mailspring's native mechanism for opening a composer in a separate window.
+![Screenshot](.github/docs/screenshot.gif)
+By default, Mailspring opens the reply editor inline, directly below the email in the conversation. This plugin intercepts it and diverts it to Mailspring's native mechanism for opening a composer in a separate window.
 
 When you click **Reply**, **Reply All**, or **Forward**:
 
